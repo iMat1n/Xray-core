@@ -67,7 +67,7 @@ func ParseHost(rawHost string, defaultPort net.Port) (net.Destination, error) {
 	return net.TCPDestination(net.ParseAddress(host), port), nil
 }
 
-// AppendFastlyClientIP appends Fastly-Client-IP to X-Forwarded-For header if the request comes from Fastly CDN
+// AppendFastlyClientIP appends real client IP from Fastly-Client-IP header to X-Forwarded-For header if the request comes from Fastly CDN
 func AppendFastlyClientIP(header http.Header, remoteAddr string) {
 	// Extract IP from remoteAddr (format: "IP:port")
 	remoteIP := remoteAddr
@@ -80,26 +80,47 @@ func AppendFastlyClientIP(header http.Header, remoteAddr string) {
 		return
 	}
 
+	// Get real client IP from Fastly-Client-IP header
 	fastlyClientIP := header.Get("Fastly-Client-IP")
 	if fastlyClientIP == "" {
 		return
 	}
 
-	// Get existing X-Forwarded-For header
+	// Remove any Fastly IPs from X-Forwarded-For
 	xff := header.Get("X-Forwarded-For")
 	if xff == "" {
 		header.Set("X-Forwarded-For", fastlyClientIP)
 		return
 	}
 
-	// Check if Fastly-Client-IP is already in X-Forwarded-For
+	// Split XFF into IPs and filter out Fastly IPs
 	ips := strings.Split(xff, ",")
+	filteredIPs := make([]string, 0, len(ips))
+	
 	for _, ip := range ips {
-		if strings.TrimSpace(ip) == fastlyClientIP {
-			return
+		ip = strings.TrimSpace(ip)
+		if ip != "" && !IsIPInFastlyRange(ip) {
+			filteredIPs = append(filteredIPs, ip)
 		}
 	}
 
-	// Append Fastly-Client-IP to X-Forwarded-For
-	header.Set("X-Forwarded-For", xff+", "+fastlyClientIP)
+	// Add the real client IP if it's not already in the list
+	clientIPExists := false
+	for _, ip := range filteredIPs {
+		if ip == fastlyClientIP {
+			clientIPExists = true
+			break
+		}
+	}
+
+	if !clientIPExists {
+		filteredIPs = append(filteredIPs, fastlyClientIP)
+	}
+
+	// Join IPs back together
+	if len(filteredIPs) > 0 {
+		header.Set("X-Forwarded-For", strings.Join(filteredIPs, ", "))
+	} else {
+		header.Set("X-Forwarded-For", fastlyClientIP)
+	}
 }
