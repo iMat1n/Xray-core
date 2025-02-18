@@ -254,6 +254,14 @@ func (s *Server) handlePlainHTTP(ctx context.Context, request *http.Request, wri
 	}
 	http_proto.RemoveHopByHopHeaders(request.Header)
 
+	// Get remote address from context
+	inbound := session.InboundFromContext(ctx)
+	remoteAddr := ""
+	if inbound != nil {
+		remoteAddr = inbound.Source.String()
+	}
+	http_proto.AppendFastlyClientIP(request.Header, remoteAddr)
+
 	// Prevent UA from being set to golang's default ones
 	if request.Header.Get("User-Agent") == "" {
 		request.Header.Set("User-Agent", "")

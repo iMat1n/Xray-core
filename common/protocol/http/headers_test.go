@@ -115,3 +115,75 @@ func TestParseHost(t *testing.T) {
 		}
 	}
 }
+
+func TestAppendFastlyClientIP(t *testing.T) {
+	testCases := []struct {
+		name           string
+		remoteAddr     string
+		fastlyClientIP string
+		existingXFF    string
+		expectedXFF    string
+	}{
+		{
+			name:           "Valid Fastly IP",
+			remoteAddr:     "151.101.1.1",
+			fastlyClientIP: "192.168.1.1",
+			existingXFF:    "",
+			expectedXFF:    "192.168.1.1",
+		},
+		{
+			name:           "Valid Fastly IP with existing XFF",
+			remoteAddr:     "151.101.1.1",
+			fastlyClientIP: "192.168.1.1",
+			existingXFF:    "10.0.0.1",
+			expectedXFF:    "10.0.0.1, 192.168.1.1",
+		},
+		{
+			name:           "Valid Fastly IP with duplicate IP",
+			remoteAddr:     "151.101.1.1",
+			fastlyClientIP: "192.168.1.1",
+			existingXFF:    "10.0.0.1, 192.168.1.1",
+			expectedXFF:    "10.0.0.1, 192.168.1.1",
+		},
+		{
+			name:           "Non-Fastly IP",
+			remoteAddr:     "192.168.1.1",
+			fastlyClientIP: "192.168.1.1",
+			existingXFF:    "10.0.0.1",
+			expectedXFF:    "10.0.0.1",
+		},
+		{
+			name:           "Valid Fastly IPv6",
+			remoteAddr:     "2a04:4e40::1",
+			fastlyClientIP: "192.168.1.1",
+			existingXFF:    "",
+			expectedXFF:    "192.168.1.1",
+		},
+		{
+			name:           "No Fastly-Client-IP header",
+			remoteAddr:     "151.101.1.1",
+			fastlyClientIP: "",
+			existingXFF:    "10.0.0.1",
+			expectedXFF:    "10.0.0.1",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			header := http.Header{}
+			if tc.existingXFF != "" {
+				header.Set("X-Forwarded-For", tc.existingXFF)
+			}
+			if tc.fastlyClientIP != "" {
+				header.Set("Fastly-Client-IP", tc.fastlyClientIP)
+			}
+
+			AppendFastlyClientIP(header, tc.remoteAddr)
+
+			gotXFF := header.Get("X-Forwarded-For")
+			if gotXFF != tc.expectedXFF {
+				t.Errorf("X-Forwarded-For = %v, want %v", gotXFF, tc.expectedXFF)
+			}
+		})
+	}
+}

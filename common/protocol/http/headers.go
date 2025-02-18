@@ -66,3 +66,40 @@ func ParseHost(rawHost string, defaultPort net.Port) (net.Destination, error) {
 
 	return net.TCPDestination(net.ParseAddress(host), port), nil
 }
+
+// AppendFastlyClientIP appends Fastly-Client-IP to X-Forwarded-For header if the request comes from Fastly CDN
+func AppendFastlyClientIP(header http.Header, remoteAddr string) {
+	// Extract IP from remoteAddr (format: "IP:port")
+	remoteIP := remoteAddr
+	if host, _, err := net.SplitHostPort(remoteAddr); err == nil {
+		remoteIP = host
+	}
+
+	// Check if the request is coming from Fastly's IP range
+	if !IsIPInFastlyRange(remoteIP) {
+		return
+	}
+
+	fastlyClientIP := header.Get("Fastly-Client-IP")
+	if fastlyClientIP == "" {
+		return
+	}
+
+	// Get existing X-Forwarded-For header
+	xff := header.Get("X-Forwarded-For")
+	if xff == "" {
+		header.Set("X-Forwarded-For", fastlyClientIP)
+		return
+	}
+
+	// Check if Fastly-Client-IP is already in X-Forwarded-For
+	ips := strings.Split(xff, ",")
+	for _, ip := range ips {
+		if strings.TrimSpace(ip) == fastlyClientIP {
+			return
+		}
+	}
+
+	// Append Fastly-Client-IP to X-Forwarded-For
+	header.Set("X-Forwarded-For", xff+", "+fastlyClientIP)
+}
