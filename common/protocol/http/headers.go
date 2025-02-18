@@ -110,20 +110,6 @@ func AppendFastlyClientIP(header http.Header, remoteAddr string) {
 		}
 	}
 
-	// Add the real client IP if it's not already in the list
-	clientIPExists := false
-	for _, ip := range filteredIPs {
-		if ip == clientIP {
-			clientIPExists = true
-			break
-		}
-	}
-
-	if !clientIPExists {
-		filteredIPs = append(filteredIPs, clientIP)
-	}
-
-	// Join IPs back together
 	if len(filteredIPs) > 0 {
 		header.Set("X-Forwarded-For", strings.Join(filteredIPs, ", "))
 	} else {
