@@ -80,26 +80,32 @@ func AppendFastlyClientIP(header http.Header, remoteAddr string) {
 		return
 	}
 
-	// Get real client IP from Fastly-Client-IP header
-	fastlyClientIP := header.Get("Fastly-Client-IP")
-	if fastlyClientIP == "" {
-		return
+	// Get real client IP from Fastly headers in order of preference
+	var clientIP string
+
+	// 1. Try Fastly-Client-IP (most reliable)
+	clientIP = header.Get("Fastly-Client-IP")
+
+	// 2. Try True-Client-IP as fallback
+	if clientIP == "" {
+		clientIP = header.Get("X-Forwarded-For")
 	}
 
-	// Remove any Fastly IPs from X-Forwarded-For
+	// Get and clean the X-Forwarded-For header
 	xff := header.Get("X-Forwarded-For")
 	if xff == "" {
-		header.Set("X-Forwarded-For", fastlyClientIP)
+		header.Set("X-Forwarded-For", clientIP)
 		return
 	}
 
 	// Split XFF into IPs and filter out Fastly IPs
 	ips := strings.Split(xff, ",")
 	filteredIPs := make([]string, 0, len(ips))
-	
+
 	for _, ip := range ips {
 		ip = strings.TrimSpace(ip)
-		if ip != "" && !IsIPInFastlyRange(ip) {
+		// Only keep non-empty, valid, non-Fastly IPs
+		if ip != "" && net.ParseIP(ip) != nil && !IsIPInFastlyRange(ip) {
 			filteredIPs = append(filteredIPs, ip)
 		}
 	}
@@ -107,20 +113,24 @@ func AppendFastlyClientIP(header http.Header, remoteAddr string) {
 	// Add the real client IP if it's not already in the list
 	clientIPExists := false
 	for _, ip := range filteredIPs {
-		if ip == fastlyClientIP {
+		if ip == clientIP {
 			clientIPExists = true
 			break
 		}
 	}
 
 	if !clientIPExists {
-		filteredIPs = append(filteredIPs, fastlyClientIP)
+		filteredIPs = append(filteredIPs, clientIP)
 	}
 
 	// Join IPs back together
 	if len(filteredIPs) > 0 {
 		header.Set("X-Forwarded-For", strings.Join(filteredIPs, ", "))
 	} else {
-		header.Set("X-Forwarded-For", fastlyClientIP)
+		header.Set("X-Forwarded-For", clientIP)
 	}
+
+	// Remove Fastly-specific headers to prevent spoofing in subsequent requests
+	header.Del("Fastly-Client-IP")
+	header.Del("True-Client-IP")
 }
